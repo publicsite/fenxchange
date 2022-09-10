@@ -1,0 +1,1204 @@
+<html>
+<title>The Funky FenXChange</title>
+<script src="https://cdn.jsdelivr.net/npm/tweetnacl-util@0.15.0/nacl-util.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tweetnacl@1.0.0/nacl-fast.js"></script>
+
+<script>
+
+const newNonce = () => nacl.randomBytes(nacl.secretbox.nonceLength);
+
+const generateKey = () => nacl.util.encodeBase64(nacl.randomBytes(nacl.secretbox.keyLength));
+
+ const encrypt = (json, key) => {
+  const keyUint8Array = nacl.util.decodeBase64(key);
+
+  const nonce = newNonce();
+  const messageUint8 = nacl.util.decodeUTF8(JSON.stringify(json));
+  const box = nacl.secretbox(messageUint8, nonce, keyUint8Array);
+
+  const fullMessage = new Uint8Array(nonce.length + box.length);
+  fullMessage.set(nonce);
+  fullMessage.set(box, nonce.length);
+
+  const base64FullMessage = nacl.util.encodeBase64(fullMessage);
+  return base64FullMessage;
+};
+
+ const decrypt = (messageWithNonce, key) => {
+  const keyUint8Array = nacl.util.decodeBase64(key);
+  const messageWithNonceAsUint8Array = nacl.util.decodeBase64(messageWithNonce);
+  const nonce = messageWithNonceAsUint8Array.slice(0, nacl.secretbox.nonceLength);
+  const message = messageWithNonceAsUint8Array.slice(
+    nacl.secretbox.nonceLength,
+    messageWithNonce.length
+  );
+
+  const decrypted = nacl.secretbox.open(message, nonce, keyUint8Array);
+
+  if (!decrypted) {
+    throw new Error("Could not decrypt message");
+  }
+
+  const base64DecryptedMessage = nacl.util.encodeUTF8(decrypted);
+  return JSON.parse(base64DecryptedMessage);
+};
+
+ const sign = (json, secretKey, publicKey) => {
+  const keyUint8Array = nacl.util.decodeBase64(secretKey);
+  const messageUint8 = nacl.util.decodeUTF8(JSON.stringify(json));
+
+  const signature = nacl.sign.detached(messageUint8, keyUint8Array);
+
+  const obj = {message: nacl.util.encodeBase64(messageUint8), signature: nacl.util.encodeBase64(signature), publicKey : publicKey};
+  const objStringy = JSON.stringify(obj);
+
+  //const base64Signature = nacl.util.encodeBase64(signature);
+  //const base64SignedMessage = nacl.util.encodeBase64(messageUint8);
+  return objStringy;
+};
+
+//message, signature, publickey
+
+ const readSigned = (objStringy) => {
+
+  const obj = JSON.parse(objStringy);
+
+const messageUint8Array = new Uint8Array(nacl.util.decodeBase64(obj.message));
+const signatureUint8Array = new Uint8Array(nacl.util.decodeBase64(obj.signature));
+const publicKeyUint8Array = new Uint8Array(nacl.util.decodeBase64(obj.publicKey));
+
+if ( nacl.sign.detached.verify(messageUint8Array, signatureUint8Array, publicKeyUint8Array))
+return true;
+else
+return false;
+
+   // throw new Error("Could not decrypt message");
+
+
+};
+
+//encrypt check
+//const key = generateKey();
+//const obj = { "hello": "world" };
+//const encrypted = encrypt(obj, key);
+//const decrypted = decrypt(encrypted, key);
+//console.log(decrypted, obj); // should be shallow equal
+
+//sign check
+//const key = nacl.sign.keyPair();
+//const secretKey = nacl.util.encodeBase64(key.secretKey);
+//const publicKey = nacl.util.encodeBase64(key.publicKey);
+//const obj = { "hello": "world" };
+//const base64obj = sign(obj, secretKey, publicKey);
+//alert(base64obj);
+
+
+//send message, signature, publickey
+//alert(readSigned(base64obj));
+//console.log(decrypted, obj); // should be shallow equal
+
+var theWindow=0;
+
+//key, how much owed to your key
+var owed = {};
+
+//key, how much that key has minted
+var minted = {};
+
+//how much your key has spent
+var spent = 0;
+
+var identities = {};
+var identitiesPlus = {};
+var identitiesMinus = {};
+
+var unconfirmedIdentities = {};
+var unconfirmedIdentitiesPlus = {};
+var unconfirmedIdentitiesMinus = {};
+
+var fileBlob
+var portfolioScanned = [];
+var portfolioMessage = [];
+var portfolioSignature = [];
+var portfolioPublicKey = [];
+
+var toProcessMessage = [];
+var toProcessSignature = [];
+var toProcessPublicKey = [];
+
+var userKey = "";
+
+prettyPrintPublicKey = "";
+prettyPrintSecretKey = "";
+
+function exportWalletFunction(incSecrets)
+{
+prettyPrintPublicKey = nacl.util.encodeBase64(userKey.publicKey);
+prettyPrintSecretKey = nacl.util.encodeBase64(userKey.secretKey);
+
+var wallet;
+
+if (incSecrets == 1)
+{
+wallet = '{"base64PublicKey":"' + prettyPrintPublicKey + '", "base64SecretKey":"'+ prettyPrintSecretKey + '", "portfolioMessage":['
+}
+else
+if (incSecrets == -1)
+{
+wallet = '{"portfolioMessage":['
+}
+
+//alert(portfolioMessage.length);
+
+for (i=0; i < portfolioMessage.length; ++i)
+{
+//alert(i);
+if (i == portfolioMessage.length - 1)
+wallet += '"' + portfolioMessage[i] + '"]'
+else
+wallet += '"' + portfolioMessage[i] + '", '
+}
+
+wallet += ', "portfolioSignature":['
+
+for (i=0; i < portfolioSignature.length; ++i)
+{
+if (i == portfolioSignature.length - 1)
+wallet += '"' + portfolioSignature[i] + '"]'
+else
+wallet += '"' + portfolioSignature[i] + '", '
+}
+
+wallet += ', "portfolioPublicKey":['
+
+for (i=0; i < portfolioPublicKey.length; ++i)
+{
+if (i == portfolioPublicKey.length - 1)
+wallet += '"' + portfolioPublicKey[i] + '"]'
+else
+wallet += '"' + portfolioPublicKey[i] + '", '
+}
+
+
+wallet += '}'
+
+return wallet;
+}
+
+function guiExportWalletHref() {
+
+wallet = exportWalletFunction(1);
+
+fileBlob = new Blob([wallet], {type: "application/octet-binary"});
+
+	guiExportWalletHrefId.setAttribute("href", URL.createObjectURL(fileBlob));
+	guiExportWalletHrefId.setAttribute("download", "wallet.txt");
+}
+
+function guiCreateAccountBtn(){
+userKey = nacl.sign.keyPair();
+document.getElementById("guiIdentityFieldHdrId").innerHTML = nacl.util.encodeBase64(userKey.publicKey);
+
+document.getElementById("guiSignInBtnId").style.display = 'none';
+document.getElementById("guiCreateAccountBtnId").style.display = 'none';
+
+document.getElementById("guiSendFenBtnId").style.display = 'block';
+document.getElementById("guiReceiveFenBtnId").style.display = 'block';
+document.getElementById("guiCheckValueBtnId").style.display = 'block';
+document.getElementById("guiExportWalletHrefId").style.display = 'block';
+document.getElementById("guiBackBtnId").style.display = 'block';
+
+theWindow=1;
+
+guiExportWalletHref();
+}
+
+function guiSignInBtn(){
+
+document.getElementById("openFileDialog").click();
+
+}
+
+function guiSignInOKBtn(){
+
+
+}
+
+function guiSendBtn(){
+	if ( userKey != "" )
+	{
+		const obj = { from: nacl.util.encodeBase64(userKey.publicKey), to: guiSendFenKeyTbxId.value , amount: guiSendFenAmountTbxId.value };
+
+		const base64obj = sign(obj, nacl.util.encodeBase64(userKey.secretKey), nacl.util.encodeBase64(userKey.publicKey));
+
+		toAddToPortfolioObj = JSON.parse(base64obj)
+
+		//process the transaction
+		toProcessMessage.push(toAddToPortfolioObj.message);
+		toProcessSignature.push(toAddToPortfolioObj.signature);
+		toProcessPublicKey.push(toAddToPortfolioObj.publicKey);
+		processPortfolio();
+
+		navigator.clipboard.writeText(exportWalletFunction(-1))
+		alert("Text copied to clipboard: Paste to recipient.");
+
+		guiExportWalletHref();
+
+		document.getElementById("guiSendFenBtnId").style.display = 'block';
+		document.getElementById("guiReceiveFenBtnId").style.display = 'block';
+		document.getElementById("guiCheckValueBtnId").style.display = 'block';
+		document.getElementById("guiExportWalletHrefId").style.display = 'block';
+
+		document.getElementById("guiSendFenAmountTbxId").style.display = 'none';
+		document.getElementById("guiSendFenKeyTbxId").style.display = 'none';
+		document.getElementById("guiReceiveFenStringTbxId").style.display = 'none';
+		document.getElementById("guiSendBtnId").style.display = 'none';
+
+		document.getElementById("guiBackBtnId").style.display = 'block';
+
+		theWindow=1;
+	}
+
+}
+
+function readTextFile(file)
+{
+    var rawFile = new XMLHttpRequest();
+    rawFile.open("GET", file, false);
+    rawFile.onreadystatechange = function ()
+    {
+        if(rawFile.readyState === 4)
+        {
+            if(rawFile.status === 200 || rawFile.status == 0)
+            {
+                var allText = rawFile.responseText;
+                alert(allText);
+            }
+        }
+    }
+    rawFile.send(null);
+}
+
+function guiSendFenBtn(){
+//Main window buttons
+document.getElementById("guiSendFenBtnId").style.display = 'none';
+document.getElementById("guiReceiveFenBtnId").style.display = 'none';
+document.getElementById("guiCheckValueBtnId").style.display = 'none';
+document.getElementById("guiExportWalletHrefId").style.display = 'none';
+
+document.getElementById("guiSendFenAmountTbxId").style.display = 'block';
+document.getElementById("guiSendFenKeyTbxId").style.display = 'block';
+document.getElementById("guiSendBtnId").style.display = 'block';
+
+document.getElementById("guiBackBtnId").style.display = 'block';
+
+theWindow = 2;
+}
+
+function guiReceiveFenBtn(){
+
+
+/*
+for (i=0; i < portfolioMessage.length; ++i)
+{
+	var found = -1;
+	if (portfolioMessage[i] == &&  portfolioSignature[i] == portfolioPublicKey[i] ==)
+	{
+		found = 1;
+	}
+
+	if (found != 1)
+	{
+	}
+}
+*/
+//Main window buttons
+document.getElementById("guiSendFenBtnId").style.display = 'none';
+document.getElementById("guiReceiveFenBtnId").style.display = 'none';
+document.getElementById("guiCheckValueBtnId").style.display = 'none';
+document.getElementById("guiExportWalletHrefId").style.display = 'none';
+
+document.getElementById("guiReceiveFenStringTbxId").style.display = 'block';
+document.getElementById("guiReceiveBtnId").style.display = 'block';
+
+document.getElementById("guiBackBtnId").style.display = 'block';
+
+theWindow = 2;
+}
+
+function guiReceiveBtn(){
+
+	var objContents = JSON.parse(document.getElementById("guiReceiveFenStringTbxId").value);
+
+	//look for existing values in
+	toProcessMessage = objContents.portfolioMessage.slice();
+	toProcessSignature = objContents.portfolioSignature.slice();
+	toProcessPublicKey = objContents.portfolioPublicKey.slice();
+
+processPortfolio();
+
+	alert("Everything done ... remember to export your huge wallet!");
+
+	document.getElementById("guiSendFenBtnId").style.display = 'block';
+	document.getElementById("guiReceiveFenBtnId").style.display = 'block';
+	document.getElementById("guiCheckValueBtnId").style.display = 'block';
+	document.getElementById("guiExportWalletHrefId").style.display = 'block';
+
+	document.getElementById("guiReceiveFenStringTbxId").style.display = 'none';
+	document.getElementById("guiReceiveBtnId").style.display = 'none';
+
+	guiExportWalletHref();
+
+/*
+receiveObj = JSON.parse(document.getElementById("guiReceiveFenStringTbxId").value);
+
+const messageUint8Array = new Uint8Array(nacl.util.decodeBase64(receiveObj.message));
+const signatureUint8Array = new Uint8Array(nacl.util.decodeBase64(receiveObj.signature));
+const publicKeyUint8Array = new Uint8Array(nacl.util.decodeBase64(receiveObj.publicKey));
+
+
+
+if ( nacl.sign.detached.verify(messageUint8Array, signatureUint8Array, publicKeyUint8Array))
+{
+	messageObj = JSON.parse(nacl.util.encodeUTF8(nacl.util.decodeBase64(receiveObj.message)));
+	if ( messageObj.to == prettyPrintPublicKey)
+	{
+		found = -1;
+		for (i=0; i < portfolioMessage.length; ++i)
+		{
+			if (portfolioMessage[i] == receiveObj.message && portfolioSignature[i] == receiveObj.signature && portfolioPublicKey[i] == receiveObj.publicKey)
+			{
+				found = 1;
+				alert("Silly billy; you already have this coin.");
+			}
+		}
+
+		if (found == -1)
+		{
+			portfolioMessage.push(receiveObj.message);
+			portfolioSignature.push(receiveObj.signature);
+			portfolioPublicKey.push(receiveObj.publicKey);
+
+			alert("Success ... Remember to export your huge wallet!");
+
+			document.getElementById("guiSendFenBtnId").style.display = 'block';
+			document.getElementById("guiReceiveFenBtnId").style.display = 'block';
+			document.getElementById("guiCheckValueBtnId").style.display = 'block';
+			document.getElementById("guiExportWalletHrefId").style.display = 'block';
+
+			document.getElementById("guiBackBtnId").style.display = 'block';
+
+			document.getElementById("guiReceiveFenStringTbxId").style.display = 'none';
+			document.getElementById("guiReceiveBtnId").style.display = 'none';
+
+			guiExportWalletHref();
+		}
+	}
+	else
+	{
+		alert("Yoda says: Do not steal coins!");
+	}
+}
+else
+{
+alert("Invalid token string.")
+}
+*/
+
+}
+
+function loadWallet(){
+//alert(document.getElementById("openFileDialog").value);
+}
+
+function processIdentities(tempIdentities)
+{
+	var tempIdentities2 = {};
+	found = -1;
+	for (j=0; j < portfolioPublicKey.length; ++j)
+	{
+
+		if (portfolioScanned[j] != 1)
+		{
+			const messageUint8Array = new Uint8Array(nacl.util.decodeBase64(portfolioMessage[j]));
+			const signatureUint8Array = new Uint8Array(nacl.util.decodeBase64(portfolioSignature[j]));
+			const publicKeyUint8Array = new Uint8Array(nacl.util.decodeBase64(portfolioPublicKey[j]));
+
+			if ( nacl.sign.detached.verify(messageUint8Array, signatureUint8Array, publicKeyUint8Array))
+			{
+				messageObj = JSON.parse(nacl.util.encodeUTF8(nacl.util.decodeBase64(portfolioMessage[j])));
+//alert(JSON.stringify(tempIdentities));
+//alert(portfolioPublicKey[j])
+				if (tempIdentities[portfolioPublicKey[j]])
+				{
+//alert("woo");
+					found = 1;
+					portfolioScanned[j] = 1;
+
+					if (identitiesMinus[messageObj.from])
+					{
+						identitiesMinus[messageObj.from] = parseFloat(identitiesMinus[messageObj.from]) - parseFloat(messageObj.amount); // * (1-(1/(tempIdentities[portfolioPublicKey[j]]+1)));
+						tempIdentities2[messageObj.from] = parseFloat(tempIdentities2[messageObj.from]) - parseFloat(messageObj.amount);
+					}
+					else
+					{
+						identitiesMinus[messageObj.from] = 0 - parseFloat(messageObj.amount); // * (1-(1/(tempIdentities[portfolioPublicKey[j]]+1)));
+						tempIdentities2[messageObj.from] = 0 - parseFloat(messageObj.amount);
+					}
+
+					if (identitiesPlus[messageObj.to])
+					{
+						identitiesPlus[messageObj.to] = parseFloat(identitiesPlus[messageObj.to]) + parseFloat(messageObj.amount);
+						tempIdentities2[messageObj.to] = parseFloat(tempIdentities2[messageObj.to]) + parseFloat(messageObj.amount);
+					}
+					else
+					{
+						identitiesPlus[messageObj.to] = parseFloat(messageObj.amount); // * (1-(1/(tempIdentities[portfolioPublicKey[j]]+1)));
+						tempIdentities2[messageObj.to] = parseFloat(messageObj.amount);
+					}
+
+					if (identities[messageObj.to])
+					{
+						identities[messageObj.to] = parseFloat(identities[messageObj.to]) + (parseFloat(identities[messageObj.from])/parseFloat(messageObj.amount));
+					}
+					else
+					{
+						identities[messageObj.to] = parseFloat(identities[messageObj.from])/parseFloat(messageObj.amount);
+					}
+
+					if (identities[messageObj.from])
+					{
+						identities[messageObj.from] = parseFloat(identities[messageObj.from]) + (parseFloat(identities[messageObj.from])/(0-parseFloat(messageObj.amount)));
+					}
+					else
+					{
+						identities[messageObj.from] = parseFloat(identities[messageObj.from])/(0-parseFloat(messageObj.amount));
+					}
+				}
+			}
+		}
+	}
+
+	if (found == 1)
+	{
+		processIdentities(tempIdentities2);
+	}
+}
+
+function processPortfolio(){
+
+/*
+for (i=0; i < portfolioPublicKey.length; ++i)
+{
+const messageUint8Array = new Uint8Array(nacl.util.decodeBase64(portfolioMessage[i]));
+const signatureUint8Array = new Uint8Array(nacl.util.decodeBase64(portfolioSignature[i]));
+const publicKeyUint8Array = new Uint8Array(nacl.util.decodeBase64(portfolioPublicKey[i]));
+if ( nacl.sign.detached.verify(messageUint8Array, signatureUint8Array, publicKeyUint8Array))
+{
+//alert(nacl.util.encodeUTF8(nacl.util.decodeBase64(portfolioMessage[i])));
+}
+}
+*/
+
+	for (i=0; i < toProcessMessage.length; ++i)
+	{
+		found = 0;
+		for (j=0; j < portfolioMessage.length; ++j)
+		{
+			if (toProcessMessage[i] == portfolioMessage[j] && toProcessSignature[i] == portfolioSignature[j] && toProcessPublicKey[i] == portfolioPublicKey[j])
+			{
+				found = 1;
+				break;
+			}
+		}
+
+		if (found == 0)
+		{
+			const messageUint8Array = new Uint8Array(nacl.util.decodeBase64(toProcessMessage[i]));
+			const signatureUint8Array = new Uint8Array(nacl.util.decodeBase64(toProcessSignature[i]));
+			const publicKeyUint8Array = new Uint8Array(nacl.util.decodeBase64(toProcessPublicKey[i]));
+
+			if ( nacl.sign.detached.verify(messageUint8Array, signatureUint8Array, publicKeyUint8Array))
+			{
+				portfolioMessage.push(toProcessMessage[i]);
+				portfolioSignature.push(toProcessSignature[i]);
+				portfolioPublicKey.push(toProcessPublicKey[i]);
+			}
+		}
+	}
+
+for (var member in owed) delete owed[member];
+for (var member in minted) delete minted[member];
+
+//for (var member in toProcessMessage) delete toProcessMessage[member];
+//for (var member in toProcessSignature) delete toProcessSignature[member];
+//for (var member in toProcessPublicKey) delete toProcessPublicKey[member];
+
+for (var member in identities) delete identities[member];
+for (var member in identitiesMinus) delete identitiesMinus[member];
+for (var member in identitiesPlus) delete identitiesPlus[member];
+
+for (var member in unconfirmedIdentities) delete unconfirmedIdentities[member];
+for (var member in unconfirmedIdentitiesMinus) delete unconfirmedIdentitiesMinus[member];
+for (var member in unconfirmedIdentitiesPlus) delete unconfirmedIdentitiesPlus[member];
+
+for (i = 0; i < portfolioScanned.length; ++i ) portfolioScanned[i] = -1;
+
+var found = -1;
+var tempIdentities = {};
+
+	spent = 0;
+
+	for (i=0; i < portfolioPublicKey.length; ++i)
+	{
+		const messageUint8Array = new Uint8Array(nacl.util.decodeBase64(portfolioMessage[i]));
+		const signatureUint8Array = new Uint8Array(nacl.util.decodeBase64(portfolioSignature[i]));
+		const publicKeyUint8Array = new Uint8Array(nacl.util.decodeBase64(portfolioPublicKey[i]));
+		if ( nacl.sign.detached.verify(messageUint8Array, signatureUint8Array, publicKeyUint8Array))
+		{
+
+			messageObj = JSON.parse(nacl.util.encodeUTF8(nacl.util.decodeBase64(portfolioMessage[i])));
+
+				if (messageObj.to == prettyPrintPublicKey)
+				{
+					if (owed[messageObj.from])
+					{
+						owed[messageObj.from] = parseFloat(owed[messageObj.from]) + parseFloat(messageObj.amount);
+					}
+					else
+					{
+						owed[messageObj.from] = parseFloat(messageObj.amount);
+					}
+				}
+
+				if (messageObj.from == prettyPrintPublicKey)
+				{
+					spent += parseFloat(messageObj.amount);
+				}
+
+				if (minted[messageObj.to])
+				{
+					minted[messageObj.to] = parseFloat(minted[messageObj.to]) + parseFloat(messageObj.amount);
+				}
+				else
+				{
+					minted[messageObj.to] = parseFloat(messageObj.amount);
+				}
+
+//alert(portfolioPublicKey[i] + "____" + prettyPrintPublicKey);
+				//if it is the users identity
+				if (portfolioPublicKey[i] == prettyPrintPublicKey)
+				{
+//alert("wrah");
+					//if the from identity has been processed
+					if (tempIdentities[messageObj.from])
+					{
+//alert("yesB");
+						identitiesMinus[messageObj.from] = parseFloat(identitiesMinus[messageObj.from]) - parseFloat(messageObj.amount);
+						tempIdentities[messageObj.from] = parseFloat(tempIdentities[messageObj.from]) - parseFloat(messageObj.amount);
+					}
+					else
+					{
+//alert("yesD");
+
+						identitiesMinus[messageObj.from] = 0 - parseFloat(messageObj.amount);
+						tempIdentities[messageObj.from] = 0 - parseFloat(messageObj.amount);
+					}
+
+					//if the to identity has been processed
+					if (tempIdentities[messageObj.to])
+					{
+
+						identitiesPlus[messageObj.to] = parseFloat(identitiesPlus[messageObj.to]) + parseFloat(messageObj.amount);
+						tempIdentities[messageObj.to] = parseFloat(tempIdentities[messageObj.to]) + parseFloat(messageObj.amount);
+					}
+					else
+					{
+//alert("yesC");
+						identitiesPlus[messageObj.to] = messageObj.amount;
+						tempIdentities[messageObj.to] = messageObj.amount;
+					}
+
+
+					if (identities[messageObj.to])
+					{
+						identities[messageObj.to] = parseFloat(identities[messageObj.to]) + (parseFloat(identities[messageObj.from])/parseFloat(messageObj.amount));
+					}
+					else
+					{
+						identities[messageObj.to] = messageObj.amount;
+					}
+
+					if (identities[messageObj.from])
+					{
+						identities[messageObj.from] = parseFloat(identities[messageObj.from]) + (parseFloat(identities[messageObj.from])/(0 - parseFloat(messageObj.amount)));
+					}
+					else
+					{
+						identities[messageObj.from] = 0 - parseFloat(messageObj.amount);
+					}
+
+					found = 1;
+					portfolioScanned[i] = 1
+				}
+
+			//alert ("yes");
+		}
+	}
+
+if (found == 1) processIdentities(tempIdentities);
+
+	for (i=0; i < portfolioPublicKey.length; ++i)
+	{
+		if (portfolioScanned[i] != 1)
+		{
+			const messageUint8Array = new Uint8Array(nacl.util.decodeBase64(portfolioMessage[i]));
+			const signatureUint8Array = new Uint8Array(nacl.util.decodeBase64(portfolioSignature[i]));
+			const publicKeyUint8Array = new Uint8Array(nacl.util.decodeBase64(portfolioPublicKey[i]));
+			if ( nacl.sign.detached.verify(messageUint8Array, signatureUint8Array, publicKeyUint8Array))
+			{
+				messageObj = JSON.parse(nacl.util.encodeUTF8(nacl.util.decodeBase64(portfolioMessage[i])));
+				unconfirmedIdentities[messageObj.from] = "???";
+				unconfirmedIdentities[messageObj.to] = "???";
+				if (unconfirmedIdentitiesPlus[messageObj.to])
+				{
+					unconfirmedIdentitiesPlus[messageObj.to] = parseFloat(unconfirmedIdentitiesPlus[messageObj.to]) + parseFloat(messageObj.amount);
+				}
+				else
+				{
+					unconfirmedIdentitiesPlus[messageObj.to] = parseFloat(messageObj.amount);
+				}
+
+				if (unconfirmedIdentitiesMinus[messageObj.from])
+				{
+					unconfirmedIdentitiesMinus[messageObj.from] = parseFloat(unconfirmedIdentitiesMinus[messageObj.from]) - parseFloat(messageObj.amount);
+				}
+				else
+				{
+					unconfirmedIdentitiesMinus[messageObj.from] = 0 - parseFloat(messageObj.amount);
+				}
+
+			}
+			portfolioScanned[i] = 1;
+		}
+	}
+
+//alert(Object.keys(identities).length);
+
+
+//read who I've signed
+	//read how much I signed to them
+		//read who they've signed
+			//read how much they signed to them
+}
+
+  function readWalletFile(evt) {
+    //Retrieve the first (and only!) File from the FileList object
+    var f = evt.target.files[0]; 
+
+    if (f) {
+      var r = new FileReader();
+      r.onload = function(e) { 
+	      var contents = e.target.result;
+		var objContents = JSON.parse(contents);
+		toProcessMessage = objContents.portfolioMessage.slice();
+		toProcessSignature = objContents.portfolioSignature.slice();
+		toProcessPublicKey = objContents.portfolioPublicKey.slice();
+		prettyPrintPublicKey = objContents.base64PublicKey;
+		prettyPrintSecretKey = objContents.base64SecretKey;
+		userKey.publicKey = nacl.util.decodeBase64(prettyPrintPublicKey);
+		userKey.secretKey = nacl.util.decodeBase64(prettyPrintSecretKey);
+		processPortfolio();
+
+		document.getElementById("guiIdentityFieldHdrId").innerHTML = prettyPrintPublicKey;
+
+		document.getElementById("guiSignInBtnId").style.display = 'none';
+		document.getElementById("guiCreateAccountBtnId").style.display = 'none';
+
+		document.getElementById("guiSendFenBtnId").style.display = 'block';
+		document.getElementById("guiReceiveFenBtnId").style.display = 'block';
+		document.getElementById("guiCheckValueBtnId").style.display = 'block';
+		document.getElementById("guiExportWalletHrefId").style.display = 'block';
+
+		document.getElementById("guiBackBtnId").style.display = 'block';
+		theWindow = 1;
+      }
+      r.readAsText(f);
+    } else { 
+      alert("Failed to load file");
+    }
+  }
+
+function guiCheckValueBtn()
+{
+
+	theHTML ="<br>Total Spent:" + spent;
+	if (minted[prettyPrintPublicKey])
+	{
+		theHTML = theHTML + "<br>Total Revenue:" + minted[prettyPrintPublicKey]; 
+		theHTML = theHTML + "<br>Balance:" + (minted[prettyPrintPublicKey]-spent); 
+	}
+	else
+	{
+		theHTML = theHTML + "<br>Total Revenue:" + "0"; 
+		theHTML = theHTML + "<br>Balance:" + (0-spent); 
+	}
+
+	theHTML =  theHTML + "<br><br><table border=\"1px\" width=\"100%\">"
+
+	theHTML =  theHTML + "<tr style=\"color:blue\"><td>Key</td><td>You Spent:</td><td>Their Revenue:</td><td>Their Business Health:</td></tr>";
+/*
+			theHTML =  theHTML + '<tr style=\"color:white\">';
+
+			theHTML = theHTML + "<td>";
+
+			theHTML = theHTML + prettyPrintPublicKey;
+
+			theHTML = theHTML + "</td>"
+
+
+			theHTML = theHTML + "<td>";
+			theHTML = theHTML + "</td>"
+
+
+			theHTML = theHTML + "<td>";
+
+			if (identitiesPlus[key])
+			{
+				theHTML = theHTML + minted[key];
+			}
+
+			theHTML = theHTML + "</td>"
+
+			theHTML = theHTML + "<td>";
+			theHTML = theHTML + "</td>"
+
+			theHTML = theHTML + "</tr>";
+*/
+	for (var key in minted){
+			if (key != prettyPrintPublicKey)
+			{
+				theHTML = theHTML + "<tr style=\"color:green\">"
+
+				theHTML = theHTML + "<td>";
+
+				theHTML = theHTML + key;
+
+				theHTML = theHTML + "</td>"
+
+
+				theHTML = theHTML + "<td>";
+
+				if (key != prettyPrintPublicKey)
+					theHTML = theHTML + owed[key];
+
+				theHTML = theHTML + "</td>"
+
+
+				theHTML = theHTML + "<td>";
+
+				if (minted[key])
+				{
+					theHTML = theHTML + minted[key];
+				}
+
+				theHTML = theHTML + "</td>"
+
+				theHTML = theHTML + "<td>";
+
+				if (owed[key])
+				{
+					if (minted[key])
+					{
+						theHTML = theHTML + (minted[key] - owed[key]);
+					}
+				}
+
+				theHTML = theHTML + "</td>"
+
+
+				theHTML = theHTML + "</tr>";
+			}
+	}
+
+	theHTML = theHTML + "</table></font>"
+
+/*
+
+	theHTML = "<table border=\"1px\" width=\"100%\">"
+
+	theHTML = theHTML + "<tr>"
+	theHTML = theHTML + "<td style=\"color:white\"><B>";
+	theHTML = theHTML + "Key";
+	theHTML = theHTML + "</B></td>";
+	theHTML = theHTML + "<td style=\"color:white\"><B>";
+	theHTML = theHTML + "Confimed In";
+	theHTML = theHTML + "</B></td>";
+	theHTML = theHTML + "<td style=\"color:white\"><B>";
+	theHTML = theHTML + "Confirmed Out";
+	theHTML = theHTML + "</B></td>";
+	theHTML = theHTML + "<td style=\"color:white\"><B>";
+	theHTML = theHTML + "Confirmed Total";
+	theHTML = theHTML + "</B></td>";
+	theHTML = theHTML + "<td style=\"color:white\"><B>";
+	theHTML = theHTML + "Unconfirmed In";
+	theHTML = theHTML + "</B></td>";
+	theHTML = theHTML + "<td style=\"color:white\"><B>";
+	theHTML = theHTML + "Unconfirmed Out";
+	theHTML = theHTML + "</B></td>";
+	theHTML = theHTML + "<td style=\"color:white\"><B>";
+	theHTML = theHTML + "Unconfirmed Total";
+	theHTML = theHTML + "</B></td>";
+	theHTML = theHTML + "<td style=\"color:white\"><B>";
+	theHTML = theHTML + "Credit Score";
+	theHTML = theHTML + "</B></td>";
+
+	for (var key in identities) {
+		theHTML = theHTML + "<tr>"
+		if (key == prettyPrintPublicKey)
+			theHTML = theHTML + "<td style=\"color:white\">";
+		else
+			theHTML = theHTML + "<td style=\"color:green\">"
+		theHTML = theHTML + key
+		theHTML = theHTML + "</td>";
+
+		if (key == prettyPrintPublicKey)
+			theHTML = theHTML + "<td style=\"color:white\">";
+		else
+			theHTML = theHTML + "<td style=\"color:green\">";
+
+		if (identitiesPlus[key])
+		{
+			theHTML = theHTML + identitiesPlus[key];
+		}
+		else
+		{
+			theHTML = theHTML + "0";
+		}
+		theHTML = theHTML + "</td>";
+
+		if (key == prettyPrintPublicKey)
+			theHTML = theHTML + "<td style=\"color:white\">";
+		else
+			theHTML = theHTML + "<td style=\"color:green\">";
+		if (identitiesMinus[key])
+		{
+			theHTML = theHTML + identitiesMinus[key];
+		}
+		else
+		{
+			theHTML = theHTML + "0";
+		}
+		theHTML = theHTML + "</td>";
+
+		if (key == prettyPrintPublicKey)
+			theHTML = theHTML + "<td style=\"color:white\">";
+		else
+			theHTML = theHTML + "<td style=\"color:green\">";
+		if (identitiesMinus[key])
+		{
+			if (identitiesPlus[key])
+			theHTML = theHTML + (parseFloat(identitiesMinus[key]) + parseFloat(identitiesPlus[key]));
+			else
+			theHTML = theHTML + parseFloat(identitiesMinus[key]);
+		}
+		else
+		{
+			if (identitiesPlus[key])
+			theHTML = theHTML + parseFloat(identitiesPlus[key]);
+			else
+			theHTML = theHTML + "0";
+		}
+		theHTML = theHTML + "</td>";
+
+		if (key == prettyPrintPublicKey)
+			theHTML = theHTML + "<td style=\"color:white\">";
+		else
+			theHTML = theHTML + "<td style=\"color:green\">";
+		if (unconfirmedIdentitiesPlus[key])
+		{
+			theHTML = theHTML + unconfirmedIdentitiesPlus[key];
+		}
+		else
+		{
+			theHTML = theHTML + "0";
+		}
+		theHTML = theHTML + "</td>";
+
+		if (key == prettyPrintPublicKey)
+			theHTML = theHTML + "<td style=\"color:white\">";
+		else
+			theHTML = theHTML + "<td style=\"color:green\">";
+		if (unconfirmedIdentitiesMinus[key])
+		{
+			theHTML = theHTML + unconfirmedIdentitiesMinus[key];
+		}
+		else
+		{
+			theHTML = theHTML + "0";
+		}
+		theHTML = theHTML + "</td>";
+
+
+		if (key == prettyPrintPublicKey)
+			theHTML = theHTML + "<td style=\"color:white\">";
+		else
+			theHTML = theHTML + "<td style=\"color:green\">";
+		if (unconfirmedIdentitiesMinus[key])
+		{
+			if (unconfirmedIdentitiesPlus[key])
+			theHTML = theHTML + (parseFloat(unconfirmedIdentitiesMinus[key]) + parseFloat(unconfirmedIdentitiesPlus[key]));
+			else
+			theHTML = theHTML + parseFloat(unconfirmedIdentitiesMinus[key]);
+		}
+		else
+		{
+			if (unconfirmedIdentitiesPlus[key])
+			theHTML = theHTML + parseFloat(unconfirmedIdentitiesPlus[key]);
+			else
+			theHTML = theHTML + "0";
+		}
+		theHTML = theHTML + "</td>";
+
+		if (identities[key])
+		{
+			//if ((identitiesPlus[key]+identitiesMinus[key]) == 0 || identities[key] == 0)
+			//alert(key + "0");
+			//else
+			minusIdentity = 0 - parseFloat(identities[key]);
+			if (key == prettyPrintPublicKey)
+				theHTML = theHTML + "<td style=\"color:white\">";
+			else
+				theHTML = theHTML + "<td style=\"color:green\">";
+			theHTML = theHTML + (((parseFloat(identities[key])/parseFloat(identities[prettyPrintPublicKey]))+1)/2); //(identitiesPlus[key]+identitiesMinus[key]));
+			theHTML = theHTML + "</td>"
+		}
+		else
+		{
+			if (key == prettyPrintPublicKey)
+				theHTML = theHTML + "<td style=\"color:white\">";
+			else
+				theHTML = theHTML + "<td style=\"color:green\">";
+			theHTML = theHTML + "0";
+			theHTML = theHTML + "</td>";
+		}
+
+
+		theHTML = theHTML + "</tr>"
+	}
+
+	for (var key in unconfirmedIdentities) {
+		if (!identities[key])
+		{
+			theHTML = theHTML + "<tr>"
+			theHTML = theHTML + "<td style=\"color:red\">"
+			theHTML = theHTML + key
+			theHTML = theHTML + "</td>";
+
+			theHTML = theHTML + "<td style=\"color:red\">";
+			theHTML = theHTML + "N/A";
+			theHTML = theHTML + "</td>";
+
+			theHTML = theHTML + "<td style=\"color:red\">";
+			theHTML = theHTML + "N/A";
+			theHTML = theHTML + "</td>";
+
+			theHTML = theHTML + "<td style=\"color:red\">";
+			theHTML = theHTML + "N/A";
+			theHTML = theHTML + "</td>";
+
+			theHTML = theHTML + "<td style=\"color:red\">";
+			if (unconfirmedIdentitiesPlus[key])
+			{
+				theHTML = theHTML + unconfirmedIdentitiesPlus[key];
+			}
+			else
+			{
+				theHTML = theHTML + "0";
+			}
+			theHTML = theHTML + "</td>";
+
+			theHTML = theHTML + "<td style=\"color:red\">";
+			if (unconfirmedIdentitiesMinus[key])
+			{
+				theHTML = theHTML + unconfirmedIdentitiesMinus[key];
+			}
+			else
+			{
+				theHTML = theHTML + "0";
+			}
+			theHTML = theHTML + "</td>";
+
+			if (key == prettyPrintPublicKey)
+				theHTML = theHTML + "<td style=\"color:white\">";
+			else
+				theHTML = theHTML + "<td style=\"color:green\">";
+			if (unconfirmedIdentitiesMinus[key])
+			{
+				if (unconfirmedIdentitiesPlus[key])
+					theHTML = theHTML + (parseFloat(unconfirmedIdentitiesMinus[key]) + parseFloat(unconfirmedIdentitiesPlus[key]));
+				else
+					theHTML = theHTML + parseFloat(unconfirmedIdentitiesMinus[key]);
+			}
+			else
+			{
+				if (unconfirmedIdentitiesPlus[key])
+					theHTML = theHTML + parseFloat(unconfirmedIdentitiesPlus[key]);
+				else
+					theHTML = theHTML + "0";
+			}
+			theHTML = theHTML + "</td>";
+
+			theHTML = theHTML + "<td style=\"color:red\">";
+			theHTML = theHTML + "Bad";
+			theHTML = theHTML + "</td>";
+
+			theHTML = theHTML + "</tr>"
+		}
+	}
+
+		theHTML = theHTML + "</table></font>"
+
+*/
+
+	guiCheckValueDiv.innerHTML = theHTML;
+
+	document.getElementById("guiSendFenBtnId").style.display = 'none';
+	document.getElementById("guiReceiveFenBtnId").style.display = 'none';
+	document.getElementById("guiCheckValueBtnId").style.display = 'none';
+	document.getElementById("guiExportWalletHrefId").style.display = 'none';
+
+	document.getElementById("guiCheckValueDiv").style.display = 'block';
+
+	theWindow=2;
+}
+
+function guiBackBtn()
+{
+
+	if ( theWindow == 2 )
+	{
+
+		document.getElementById("guiSendFenBtnId").style.display = 'block';
+		document.getElementById("guiReceiveFenBtnId").style.display = 'block';
+		document.getElementById("guiCheckValueBtnId").style.display = 'block';
+		document.getElementById("guiExportWalletHrefId").style.display = 'block';
+
+		document.getElementById("guiCheckValueDiv").style.display = 'none';
+
+		document.getElementById("guiSendFenAmountTbxId").style.display = 'none';
+		document.getElementById("guiSendFenKeyTbxId").style.display = 'none';
+		document.getElementById("guiSendBtnId").style.display = 'none';
+		document.getElementById("guiReceiveFenStringTbxId").style.display = 'none';
+		document.getElementById("guiReceiveBtnId").style.display = 'none';
+
+
+		document.getElementById("guiBackBtnId").style.display = 'block';
+		theWindow=1;
+	}
+	else if (theWindow == 1)
+	{
+		document.getElementById("guiSendFenBtnId").style.display = 'none';
+		document.getElementById("guiReceiveFenBtnId").style.display = 'none';
+		document.getElementById("guiCheckValueBtnId").style.display = 'none';
+		document.getElementById("guiExportWalletHrefId").style.display = 'none';
+
+		document.getElementById("guiCheckValueDiv").style.display = 'none';
+
+		document.getElementById("guiSendFenAmountTbxId").style.display = 'none';
+		document.getElementById("guiSendFenKeyTbxId").style.display = 'none';
+		document.getElementById("guiSendBtnId").style.display = 'none';
+		document.getElementById("guiReceiveFenStringTbxId").style.display = 'none';
+		document.getElementById("guiReceiveBtnId").style.display = 'none';
+
+
+
+		document.getElementById("guiSendFenAmountTbxId").style.display = 'none';
+
+		document.getElementById("guiSignInBtnId").style.display = 'block';
+		document.getElementById("guiCreateAccountBtnId").style.display = 'block';
+
+		document.getElementById("guiBackBtnId").style.display = 'none';
+		theWindow = 0;
+	}
+}
+
+function guiCheckBtn()
+{
+}
+
+function bodyOnLoad(){
+  document.getElementById('openFileDialog').addEventListener('change', readWalletFile, false);
+}
+
+</script>
+<body onload="bodyOnLoad()"  link="white" vlink="white" alink="white">
+<center>
+<table border="1px" width="100%">
+<tr bgcolor="black">
+<td>
+<center>
+<font color="white">
+<input type="file" style="display: none" id="openFileDialog"/>
+<h2 id="guiIdentityHdrId">Identity:</h2>
+<h2 id="guiIdentityFieldHdrId">?</h2>
+<div style="display: none" id="guiCheckValueDiv"></div>
+<h3 style="display: none">Do you want to ...</h3>
+<button onclick="guiSignInBtn();" style="display: block" id="guiSignInBtnId">Sign In</button>
+<button onclick="guiSendFenBtn();" style="display: none" id="guiSendFenBtnId">Send some fen</button>
+<input type="textbox" style="display: none" id="guiSendFenAmountTbxId" value="Amount"></input>
+<br><br>
+<button onclick="guiReceiveFenBtn();" style="display: none" id="guiReceiveFenBtnId">Receive some fen</button>
+<button onclick="guiCreateAccountBtn();" style="display: block" id="guiCreateAccountBtnId">Create Account</button>
+<input type="textbox" style="display: none" id="guiSendFenKeyTbxId" value="Key"></input>
+<input type="textbox" style="display: none" id="guiReceiveFenStringTbxId" value="String"></input>
+<input type="textbox" style="display: none" id="guiReceiveFenStringTbxId" value="Key"></input>
+<br><br>
+<button onclick="guiSendBtn();" style="display: none" id="guiSendBtnId">Send</button>
+<button onclick="guiReceiveBtn();" style="display: none" id="guiReceiveBtnId">Receive</button>
+<button onclick="guiCheckBtn();" style="display: none" id="guiCheckBtnId">Check</button>
+<button onclick="guiCheckValueBtn();" style="display: none" id="guiCheckValueBtnId">Check the exchange value of a identity</button>
+<input type="textbox" style="display: none" id="guiShowPortfolioTbxId" value=""></input>
+<br>
+<a href="#" style="display: none" color="white" id="guiExportWalletHrefId">Export Wallet</a>
+<br>
+<button onclick="guiBackBtn();" style="display: none" id="guiBackBtnId">Back</button>
+<br>
+</font>
+</center>
+</td>
+</tr>
+<tr>
+<td>
+<center>
+<h1>About:</h1>
+The FenXChange is a proof-of-concept token system. It does not use blockchain. It does not use mining.
+<br>
+Whenever you send someone tokens using the FenXChange, a form of feedback is given.
+<br>
+In a simple scenario, if you have left feedback for somebody using the system, by sending them tokens, the approximate value of their wallet can be guessed. You
+will have fewer tokens, and they will have more tokens. A transaction based on some level of trust has taken place.
+<br>
+Futhermore, if someone else, in-turn, has sent them (the person that you sent) tokens, you can derive an approximate worth of that somebody-else's tokens through
+inheritance.
+<br>
+Because you know that third person less well, and there is more risk associated with their identity, the derived value from their coin in FenX, can generally considered to be worth less. There is no exact way to calculate how much less, but an indicator, personal to you, is given in their credit score.
+<br>
+The format in which FenX sends transactions, is similar to other crytocurrencies, eg. it signs a note saying "A sends B x", though it is worth noting that at present, FenX does not provide a way of sending transactions, instead this is left to the user. Instant messaging, email, IRC or other form of telecommunication can be used to assist such transfers.
+<br>
+The FenXChange allows anyone to mint coins; yes, you did hear that right, anyone ... that said, just because you mint coins, doesn't mean that what you mint is automatically going to be worth billions. A wise man once said "Anyone can produce a limited number of turds, but just because you produce a constant supply, doesn't automatically make them worthy".
+<br>
+FenX was written in Javascript and works in the browser as a single page. It uses tweetnacl and tweetnacl-util. These libraries are fetched from jsDelivr CDN. In theory, if you copy these libraries, it'll work offline.
+<br>
+It is provided without warranty, so I am 100% NOT liable for any of your ridonculous financial losses or other silly stuff regarding all that jazz. Use, but use at your own risk, and don't ask me for a bailout if it all messes up. Wap.
+<br><br><br>
+
+If you like this software, consider sending me fenx by making an issue in github and sending me your code, my fenx address is:
+rWlMXyj98+wGv7Flj+TlR7Qr2+XhW3bBNv7BUcZ72U4=
+</center>
+</td>
+</tr>
+</table>
+</center>
+</body>
+</html>
